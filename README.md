@@ -15,7 +15,7 @@ The program simulates a data center that manages servers, VM types, reservations
 - `datacenter_utils.c` / `datacenter_utils.h`: VM type and reservation lookup,
   reservation validation and allocation, cleanup, and VM lifecycle helpers.
 - `resources.c` / `resources.h`: Resource operations for CPU, RAM, and disk.
-- `filesystem.c` / `filesystem.h`: Filesystem checks and absolute-path
-  resolution.
+- `filesystem.c` / `filesystem.h`: Filesystem checks, absolute-path
+  resolution, .conf tracking and qsorting auxiliar.
 - `constants.h`: Limits used by the data center, reservations, VM types, and
   identifiers.
