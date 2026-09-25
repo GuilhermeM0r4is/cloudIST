@@ -10,6 +10,18 @@
 #include <stdio.h>
 #include <unistd.h>
 
+/** 
+ * Checks if a directory entry is a configuration file.
+ * 
+* @param entry Directory entry to check.
+ * 
+ * @return 1 if the entry is a configuration file, 0 otherwise.
+ */
+	int is_conf_file(const struct dirent *entry) {
+		size_t len = strlen(entry->d_name);
+		return (len > 5 && strcmp(entry->d_name + len - 5, ".conf") == 0);
+	}
+
 int path_exists(const char *path){
   struct stat st;
 

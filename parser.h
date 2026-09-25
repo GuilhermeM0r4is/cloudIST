@@ -17,6 +17,9 @@ typedef enum {
   EOC // End of commands
 } Command;
 
+int is_conf_file(const struct dirent *entry);
+
+
 /**
  * Parses the given null-terminated string as an unsigned decimal integer.
  * The conversion succeeds only if the entire string is consumed and no

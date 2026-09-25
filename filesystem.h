@@ -2,6 +2,17 @@
 #define FILESYSTEM__H
 
 #include <stddef.h>
+#include <dirent.h>
+
+/** 
+ * Checks if a directory entry is a configuration file.
+ * 
+* @param entry Directory entry to check.
+ * 
+ * @return 1 if the entry is a configuration file, 0 otherwise.
+ */
+int is_conf_file(const struct dirent *entry);
+
 
 /**
  * Checks whether a path exists and is a directory.
