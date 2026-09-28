@@ -1,4 +1,5 @@
 #include "datacenter_utils.h"
+#include "filesystem.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,13 +19,13 @@ VMType *VMType_exists(DataCenter *dc, const char* type_id){
 
 /**
  * Checks if a reservation with the given id already exists in the Data Center.
- * 
+ *
  * @param dc Pointer to Data Center.
  * @param reservation_id Id of the reservation being checked.
- * 
+ *
  * @return 1 if the reservation exists.
  * @return 0 if the reservation does not exist.
- */	
+ */
 static int reservation_exists(DataCenter *dc, const char* reservation_id){
 	for(size_t i = 0; i < dc->num_reservations; i++){
 		if(strncmp(reservation_id, dc->reservations[i].id, MAX_STRING_SIZE) == 0){
@@ -75,7 +76,7 @@ int reservation_validate(DataCenter *dc, Reservation *reservation) {
 				fprintf(stderr, "Reached max of VMS for a reservation.\n");
 				return 1;
 			}
-			
+
 			if (hosted_count[item->server_id - 1] >= MAX_HOSTED_VMS) {
         fprintf(stderr,
                 "Server \"%zu\" reached the maximum number of hosted VMs.\n",
@@ -102,7 +103,7 @@ int reservation_validate(DataCenter *dc, Reservation *reservation) {
 
 /**
  * Rolls back the changes made by a reservation operation.
- * 
+ *
  * @param reservation Pointer to the reservation being rolled back.
  * @param initial_vms Number of VMs that existed before the operation.
  */
@@ -250,12 +251,21 @@ int spawn_all_vms(Reservation *res) {
 	for (size_t i = 0; i < res->num_vms; i++) {
 		VM *vm = res->vms[i];
 
+		char dst_buffer[MAX_PATH_SIZE];
+
+		// creates the path to be copied to as /tmp/CloudIST/<res id>/<vm id>
+		snprintf(dst_buffer, sizeof(dst_buffer), "/tmp/CloudIST/%s/%s", res->id, vm->id);
+
+		// calls our function to copy all the directories from the input_folder
+		if (copy_dir_recursive(vm->type->input_folder, dst_buffer) == 1) {
+		    fprintf(stderr, "%s went wrong while copying the input folder: %s\n", vm->id, vm->type->input_folder);
+			return 1;
+		}
+
 		// TODO: Implement fork code. Set VM PID and update VM state to running.
 
 		spawn_vm_child(vm);
-
 	}
-
 	return 0;
 }
 

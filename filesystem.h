@@ -4,15 +4,6 @@
 #include <stddef.h>
 #include <dirent.h>
 
-/** 
- * Checks if a directory entry is a configuration file.
- * 
-* @param entry Directory entry to check.
- * 
- * @return 1 if the entry is a configuration file, 0 otherwise.
- */
-int is_conf_file(const struct dirent *entry);
-
 
 /**
  * Checks whether a path exists and is a directory.
@@ -45,5 +36,25 @@ int file_exists(const char *path);
  * @return 1 if the path could not be resolved or the buffer is too small.
  */
 int absolute_path(const char *path, char *buffer, size_t size);
+
+/**
+ * Checks if a directory entry is a configuration file.
+ *
+ * @param entry Directory entry to check.
+ *
+ * @return 1 if the entry is a configuration file, 0 otherwise.
+ */
+int is_conf_file(const struct dirent *entry);
+
+/**
+ * Walks a directory tree, recreating its folder structure at the destination
+ * while copying any file recursively and preserving subfolders.
+ *
+ * @param src Path to the source file.
+ * @param dst Path to the destination file to copy all info.
+ *
+ * @return 0 if the contents of source file were copied into dst, 1 otherwise.
+ */
+int copy_dir_recursive(const char *src, const char *dst);
 
 #endif // FILESYSTEM__H

@@ -35,10 +35,10 @@ int main(int argc, char **argv){
 	}
 
 	if (strlen(argv[5]) >= sizeof(input_dir)) {
-    fprintf(stderr, "Input directory path too long.\n");
-    return 1;
+        fprintf(stderr, "Input directory path too long.\n");
+        return 1;
 	}
-	strcpy(input_dir, argv[5]);
+	strcpy(input_dir, argv[5]); // copies the path
 
 	Resources resources = {
     .ram = ram,
@@ -51,16 +51,16 @@ int main(int argc, char **argv){
 		return 1;
 	}
 
-	struct dirent **files;
-
 	if (!path_exists(input_dir)) {
 		fprintf(stderr, "Input directory does not exist: %s\n", input_dir);
 		return 1;
 	};
 
+	struct dirent **files;
+
 	int n = scandir(input_dir, &files, is_conf_file, alphasort);
-	// Check if scandir was successful, if -1 then error occurred
-	if (n < 0) {
+
+	if (n < 0) {    // Check if scandir was successful, if -1 then error occurred
 		fprintf(stderr, "Failed to scan input directory: %s\n", input_dir);
 		return 1;
 	}
@@ -68,20 +68,20 @@ int main(int argc, char **argv){
 	for (int i = 0; i < n; i++) {
 		char filepath[MAX_PATH_SIZE + 256];
 
-		snprintf(filepath, sizeof(filepath), "%s/%s", input_dir, files[i]->d_name);
+		// builds the full path into filepath
+		snprintf(filepath, sizeof(filepath), "%s/%s", input_dir, files[i] -> d_name);
+
+		// fd as file descriptor, or calling it "this open file"
 		int fd = open(filepath, O_RDONLY);
 		if (fd < 0) {
 			fprintf(stderr, "Failed to open file: %s\n", filepath);
 			continue;
 		}
+
 		int done = 0;
 		while (!done) {
 			Command cmd = get_next_command(fd);
 
-			if (cmd == EOC) {
-				done = 1;
-				continue;
-			}
 			switch (cmd) {
 				case CMD_DEFINE: {
 					VMType vmtype;
@@ -178,26 +178,26 @@ int main(int argc, char **argv){
 					);
 					break;
 				}
-				
+
 				case CMD_EMPTY: {
 					break;
 				}
 
+				// if we get into the End of Commands lines we shall stop
 				case EOC: {
-					done = 1;
-					break;
+				    done = 1;
+				    break;
 				}
-				
 			}
 		}
 		close(fd);
 	}
 
-for (int i = 0; i < n; i++) {
-    free(files[i]);
-}
-	free(files);
+    for (int i = 0; i < n; i++) {
+        free(files[i]);
+    }
+    free(files);
 
-datacenter_destroy(&dc);
-return 0;
+    datacenter_destroy(&dc);
+    return 0;
 }

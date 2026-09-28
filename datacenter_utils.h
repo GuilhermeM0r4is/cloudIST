@@ -5,10 +5,10 @@
 
 /**
  * Checks if a VMType with the given id exists.
- * 
+ *
  * @param dc Pointer to Data Center.
  * @param type_id Id of VM type being checked.
- * 
+ *
  * @return Pointer to VMType if it exists.
  * @return NULL if VMType does not exist.
  */
@@ -20,7 +20,7 @@ VMType *VMType_exists(DataCenter *dc, const char* type_id);
  * is left unchanged regardless of the outcome.
  *
  * Validation fails if any requested server does not have enough available
- * resources to host all the requested VMs assigned to it or if the request 
+ * resources to host all the requested VMs assigned to it or if the request
  * does not have valid parameters (VM types that do not exist, invalid server ids).
  *
  * @param dc Data Center where the reservation will be validated.
@@ -87,7 +87,7 @@ void spawn_vm_child(VM *vm);
  * @param res Pointer to the Reservation whose VMs should be spawned.
  *
  * @return 0 on success.
- * @return 1 if any fork() call fails.
+ * @return 1 if any fork() call fails, or directory copying fails.
  */
 int spawn_all_vms(Reservation *res);
 

@@ -14,11 +14,8 @@ typedef enum {
   CMD_HELP,
   CMD_EMPTY,
   CMD_INVALID,
-  EOC // End of commands
+  EOC           // End of commands
 } Command;
-
-int is_conf_file(const struct dirent *entry);
-
 
 /**
  * Parses the given null-terminated string as an unsigned decimal integer.
