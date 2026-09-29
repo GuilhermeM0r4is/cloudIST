@@ -145,7 +145,8 @@ int copy_dir_recursive(const char *src, const char *dst) {
     // will open each entry and while still having entries
     while((dir_entry = readdir(dir)) != NULL) {
 
-        if (strcmp(dir_entry -> d_name, ".") == 0 || strcmp(dir_entry -> d_name, "..") == 0)
+        if (strcmp(dir_entry -> d_name, ".") == 0 || 
+            strcmp(dir_entry -> d_name, "..") == 0)
             continue;   // skips any logic for other directories
 
         // stores both paths into the buffers

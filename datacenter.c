@@ -82,7 +82,7 @@ int datacenter_define_VM(DataCenter *dc, VMType *type){
     fprintf(stderr, "Maximum of VM types reached.\n");
     return 1;
   }
-  
+
   dc->vm_types[dc->num_vm_types++] = *type;
 
   return 0;
@@ -121,7 +121,7 @@ int datacenter_execute(DataCenter *dc, const char *reservation_id) {
   Reservation *res = find_pending_reservation(dc, reservation_id);
   if (!res) return 1;
 
-  if (spawn_all_vms(res) != 0) return 1;
+  if (spawn_all_vms(dc, res) != 0) return 1;
 
   res->state = RES_STATE_RUNNING;
 

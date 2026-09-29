@@ -1,6 +1,8 @@
 #include "datacenter_utils.h"
+#include "datacenter.h"
 #include "filesystem.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -239,18 +241,43 @@ void reservation_destroy(DataCenter *dc, Reservation *reservation) {
 	dc->num_reservations--;
 }
 
-void spawn_vm_child(VM *vm) {
-	(void)vm; // To avoid warning.
+void spawn_vm_child(DataCenter *dc, VM *vm) {
 
-	// TODO: Limit RAM, DISK and use exec with cpulimit.
+    // uses the rlimit structure to define both limits for ram
+    // and disk, defining later on the current and max as the same limit
+    // so we can use the setrlimit() function
+	struct rlimit ram_lim;
+	struct rlimit disk_lim;
 
-	fprintf(stderr, "VM execution not implemented in base version.\n");
+	// starts by shitfing from GB into Bytes ^30
+	ram_lim.rlim_cur = vm->type->required.ram << 30;
+	ram_lim.rlim_max = ram_lim.rlim_cur;
+
+	disk_lim.rlim_cur = vm->type->required.disk << 30;
+	disk_lim.rlim_max = disk_lim.rlim_cur;
+
+	setrlimit(RLIMIT_AS, &ram_lim);        // limit RAM using adress space
+	setrlimit(RLIMIT_FSIZE, &disk_lim);    // maximum size in bytes any process can create
+
+
+	int percent = vm->type->required.cpu / vm->server->total.cpu *
+	                 dc->num_servers * 100;
+
+	// transforms the percent int into a string
+	char str_percent[MAX_STRING_SIZE];
+	sprintf(str_percent, "%d", percent);
+
+	// execlp will search for the $PATH first and execute the command,
+	// it also restrains the usage of NULL in the end
+	if (execlp("cpulimit", "cpulimit", "-q", "-f", "-l", str_percent, "--",
+	            vm->type->exec_path, NULL) == -1)
+	    exit(1);
 }
 
-int spawn_all_vms(Reservation *res) {
+int spawn_all_vms(DataCenter *dc, Reservation *res) {
 	for (size_t i = 0; i < res->num_vms; i++) {
-		VM *vm = res->vms[i];
 
+		VM *vm = res->vms[i];
 		char dst_buffer[MAX_PATH_SIZE];
 
 		// creates the path to be copied to as /tmp/CloudIST/<res id>/<vm id>
@@ -258,13 +285,31 @@ int spawn_all_vms(Reservation *res) {
 
 		// calls our function to copy all the directories from the input_folder
 		if (copy_dir_recursive(vm->type->input_folder, dst_buffer) == 1) {
-		    fprintf(stderr, "%s went wrong while copying the input folder: %s\n", vm->id, vm->type->input_folder);
+
+		    fprintf(stderr, "%s went wrong while copying the input folder: %s\n",
+					vm->id, vm->type->input_folder);
 			return 1;
 		}
 
-		// TODO: Implement fork code. Set VM PID and update VM state to running.
+		// having a switch for the fork, so the parent can create
+		// multiple VMs that will run as childs in background of the project
+		pid_t pid = fork();
+		switch (pid) {
 
-		spawn_vm_child(vm);
+            case -1:    // error
+                perror("fork");
+                return 1;
+
+            case 0:     // child
+                spawn_vm_child(dc, vm);
+                break;
+
+            default:    //parent
+                // save the child's PID in the VM, set its state to RUNNING
+                vm->pid = pid;
+                vm->state = VM_STATE_RUNNING;
+                break;
+        }
 	}
 	return 0;
 }
