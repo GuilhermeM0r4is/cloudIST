@@ -97,9 +97,9 @@ int spawn_all_vms(DataCenter *dc, Reservation *res);
  * Blocks until every VM's process has exited, updating each VM's state
  * to VM_STATE_TERMINATED as its pid is reaped.
  *
- * @param res Pointer to the Reservation whose VMs should be waited on.
+ * @param dc Pointer to the DataCenter whose VMs should be waited on.
  */
-void wait_for_all_vms(Reservation *res);
+void check_all_finished_vms(DataCenter *dc);
 
 /**
  * Converts a VM state to a human-readable string. Used by datacenter_list().

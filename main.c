@@ -10,6 +10,14 @@
 #include "datacenter.h"
 #include "constants.h"
 
+// Necessary function to prevent orphaned VMs from continuing to run
+static int has_running(DataCenter *dc) {
+    for (size_t i = 0; i < dc->num_reservations; i++)
+        if (dc->reservations[i].state == RES_STATE_RUNNING) {
+            return 1;
+        }
+    return 0;
+}
 
 int main(int argc, char **argv){
 	DataCenter dc;
@@ -80,6 +88,8 @@ int main(int argc, char **argv){
 
 		int done = 0;
 		while (!done) {
+			// Check the VMs BEFORE executing the commands
+			check_all_finished_vms(&dc);
 			Command cmd = get_next_command(fd);
 
 			switch (cmd) {
@@ -197,6 +207,11 @@ int main(int argc, char **argv){
         free(files[i]);
     }
     free(files);
+
+    while (has_running(&dc)) {
+        check_all_finished_vms(&dc);
+        datacenter_wait(50);
+    }
 
     datacenter_destroy(&dc);
     return 0;

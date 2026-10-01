@@ -2,6 +2,7 @@
 #include "datacenter.h"
 #include "filesystem.h"
 
+#include <errno.h>   // para ECHILD
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -194,50 +195,39 @@ Reservation *find_pending_reservation(DataCenter *dc, const char *reservation_id
 	return res;
 }
 
-void reservation_destroy(DataCenter *dc, Reservation *reservation) {
+// Deconstructiong reservation_destroy to create re-usable parts
+static void vm_destroy(VM *vm) {
 	// Free every VM belonging to the reservation.
-	for (size_t i = 0; i < reservation->num_vms; i++) {
-		VM *vm = reservation->vms[i];
-		Server *server = vm->server;
-
-		// Return the VM resources back to the hosting server.
-		resources_add(&server->available, vm->type->required);
-
-		// Remove the VM from the server's hosted VM list.
-		for (size_t j = 0; j < server->num_hosted_vms; j++) {
-			if (server->hosted_vms[j] == vm) {
-				// Shift the remaining VMs one position to the left.
-				memmove(&server->hosted_vms[j],
-								&server->hosted_vms[j + 1],
-								(server->num_hosted_vms - j - 1) * sizeof(VM *));
-
-				server->num_hosted_vms--;
-				break;
-			}
+	Server *server = vm->server;
+	// Return the VM resources back to the hosting server.
+	resources_add(&server->available, vm->type->required);
+	// Remove the VM from the server's hosted VM list.
+	for (size_t j = 0; j < server->num_hosted_vms; j++) {
+		if (server->hosted_vms[j] == vm) {
+			// Shift the remaining VMs one position to the left.
+			memmove(&server->hosted_vms[j],
+			        &server->hosted_vms[j + 1],
+			        (server->num_hosted_vms - j - 1) * sizeof(VM *));
+			server->num_hosted_vms--;
+			server->hosted_vms[server->num_hosted_vms] = NULL;
+			break;
 		}
-
-		free(vm);
-		reservation->vms[i] = NULL;
 	}
+	free(vm);  
+}
 
-	reservation->num_vms = 0;
+static void reservation_remove_vm(Reservation *res, size_t k) {
+	vm_destroy(res->vms[k]);
+	memmove(&res->vms[k], &res->vms[k + 1],
+	        (res->num_vms - k - 1) * sizeof(VM *));
+	res->num_vms--;
+	res->vms[res->num_vms] = NULL;
+}
 
-	// Find the reservation inside the Data Center reservation list.
-	size_t idx;
-	for (idx = 0; idx < dc->num_reservations; idx++) {
-			if (&dc->reservations[idx] == reservation)
-				break;
-	}
-
-	// Reservation not found (should never happen).
-	if (idx == dc->num_reservations)
-		return;
-
+static void datacenter_remove_reservation(DataCenter *dc, size_t idx) {
 	// Remove the reservation by shifting the remaining ones.
-	memmove(&dc->reservations[idx],
-					&dc->reservations[idx + 1],
-					(dc->num_reservations - idx - 1) * sizeof(Reservation));
-
+	memmove(&dc->reservations[idx], &dc->reservations[idx + 1],
+	        (dc->num_reservations - idx - 1) * sizeof(Reservation));
 	dc->num_reservations--;
 }
 
@@ -314,11 +304,44 @@ int spawn_all_vms(DataCenter *dc, Reservation *res) {
 	return 0;
 }
 
-void wait_for_all_vms(Reservation *res) {
-	for (size_t i = 0; i < res->num_vms; i++) {
-		// TODO: IMPLEMENT WAITING FOR VM
+// TODO: IMPLEMENT WAITING FOR VM
+// R: yes king
+void check_all_finished_vms(DataCenter *dc) {
+	size_t i = 0;
+	while (i < dc->num_reservations) {
+		Reservation *res = &dc->reservations[i];
 
-		res->vms[i]->state = VM_STATE_TERMINATED;
+		if (res->state != RES_STATE_RUNNING) {
+			i++;
+			continue;
+		}
+
+		size_t k = 0;
+		while (k < res->num_vms) {
+			VM *vm = res->vms[k];
+
+			if (vm->state == VM_STATE_RUNNING) {
+				int status;
+				pid_t r = waitpid(vm->pid, &status, WNOHANG);
+
+				// r == pid: ended r == -1/ECHILD: has already been recieved
+				if (r == vm->pid || (r == -1 && errno == ECHILD)) {
+					reservation_remove_vm(res, k);
+					continue;          
+					// Dont increase k
+				}
+				// r == 0: still runs
+			}
+			k++;
+		}
+
+		if (res->num_vms == 0) {
+			res->state = RES_STATE_FINISHED;
+			datacenter_remove_reservation(dc, i);
+			continue; 
+			// Dont increase i
+		}
+		i++;
 	}
 }
 

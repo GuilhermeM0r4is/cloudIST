@@ -112,6 +112,7 @@ int datacenter_reserve(DataCenter *dc, Reservation *reservation) {
   return 0;
 }
 
+// Removed parts of the code that blocked main.c until the VMs ended 
 int datacenter_execute(DataCenter *dc, const char *reservation_id) {
   if(!dc->configured){
     fprintf(stderr, "Data Center needs to be configured!\n");
@@ -124,13 +125,6 @@ int datacenter_execute(DataCenter *dc, const char *reservation_id) {
   if (spawn_all_vms(dc, res) != 0) return 1;
 
   res->state = RES_STATE_RUNNING;
-
-  wait_for_all_vms(res);
-
-  res->state = RES_STATE_FINISHED;
-
-  reservation_destroy(dc, res);
-
   return 0;
 }
 
