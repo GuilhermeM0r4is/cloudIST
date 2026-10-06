@@ -197,45 +197,54 @@ Reservation *find_pending_reservation(DataCenter *dc, const char *reservation_id
 
 // Deconstructiong reservation_destroy to create re-usable parts
 static void vm_destroy(VM *vm) {
+
 	// Free every VM belonging to the reservation.
 	Server *server = vm->server;
+
 	// Return the VM resources back to the hosting server.
 	resources_add(&server->available, vm->type->required);
+
 	// Remove the VM from the server's hosted VM list.
 	for (size_t j = 0; j < server->num_hosted_vms; j++) {
 		if (server->hosted_vms[j] == vm) {
+
 			// Shift the remaining VMs one position to the left.
 			memmove(&server->hosted_vms[j],
 			        &server->hosted_vms[j + 1],
 			        (server->num_hosted_vms - j - 1) * sizeof(VM *));
+
 			server->num_hosted_vms--;
 			server->hosted_vms[server->num_hosted_vms] = NULL;
 			break;
 		}
 	}
-	free(vm);  
+	free(vm);
 }
 
 static void reservation_remove_vm(Reservation *res, size_t k) {
+
 	vm_destroy(res->vms[k]);
 	memmove(&res->vms[k], &res->vms[k + 1],
 	        (res->num_vms - k - 1) * sizeof(VM *));
+
 	res->num_vms--;
 	res->vms[res->num_vms] = NULL;
 }
 
 static void datacenter_remove_reservation(DataCenter *dc, size_t idx) {
-	// Remove the reservation by shifting the remaining ones.
+
+    // Remove the reservation by shifting the remaining ones
 	memmove(&dc->reservations[idx], &dc->reservations[idx + 1],
 	        (dc->num_reservations - idx - 1) * sizeof(Reservation));
+
 	dc->num_reservations--;
 }
 
 void spawn_vm_child(DataCenter *dc, VM *vm) {
 
-    // uses the rlimit structure to define both limits for ram
-    // and disk, defining later on the current and max as the same limit
-    // so we can use the setrlimit() function
+    /* uses the rlimit structure to define both limits for ram
+       and disk, defining later on the current and max as the same limit
+       so we can use the setrlimit() function */
 	struct rlimit ram_lim;
 	struct rlimit disk_lim;
 
@@ -257,8 +266,8 @@ void spawn_vm_child(DataCenter *dc, VM *vm) {
 	char str_percent[MAX_STRING_SIZE];
 	sprintf(str_percent, "%d", percent);
 
-	// execlp will search for the $PATH first and execute the command,
-	// it also restrains the usage of NULL in the end
+	/* execlp will search for the $PATH first and execute the command,
+	   it also restrains the usage of NULL in the end */
 	if (execlp("cpulimit", "cpulimit", "-q", "-f", "-l", str_percent, "--",
 	            vm->type->exec_path, NULL) == -1)
 	    exit(1);
@@ -281,8 +290,8 @@ int spawn_all_vms(DataCenter *dc, Reservation *res) {
 			return 1;
 		}
 
-		// having a switch for the fork, so the parent can create
-		// multiple VMs that will run as childs in background of the project
+		/* having a switch for the fork, so the parent can create
+		   multiple VMs that will run as childs in background of the project */
 		pid_t pid = fork();
 		switch (pid) {
 
@@ -304,21 +313,25 @@ int spawn_all_vms(DataCenter *dc, Reservation *res) {
 	return 0;
 }
 
-// TODO: IMPLEMENT WAITING FOR VM
-// R: yes king
+/* TODO: IMPLEMENT WAITING FOR VM
+   R: yes king */
 void check_all_finished_vms(DataCenter *dc) {
-	size_t i = 0;
-	while (i < dc->num_reservations) {
-		Reservation *res = &dc->reservations[i];
+
+    // variables to be incremented for each list respectivally
+	size_t n_reservation = 0;
+	size_t n_virtualmachine = 0;
+
+	while (n_reservation < dc->num_reservations) {
+	    // gets each reservation per cycle
+		Reservation *res = &dc->reservations[n_reservation];
 
 		if (res->state != RES_STATE_RUNNING) {
-			i++;
+			n_reservation++;
 			continue;
 		}
 
-		size_t k = 0;
-		while (k < res->num_vms) {
-			VM *vm = res->vms[k];
+		while (n_virtualmachine < res->num_vms) {
+			VM *vm = res->vms[n_virtualmachine];
 
 			if (vm->state == VM_STATE_RUNNING) {
 				int status;
@@ -326,22 +339,21 @@ void check_all_finished_vms(DataCenter *dc) {
 
 				// r == pid: ended r == -1/ECHILD: has already been recieved
 				if (r == vm->pid || (r == -1 && errno == ECHILD)) {
-					reservation_remove_vm(res, k);
-					continue;          
-					// Dont increase k
+
+					reservation_remove_vm(res, n_virtualmachine);
+					continue;  // Dont increase number of the vm
 				}
 				// r == 0: still runs
 			}
-			k++;
+			n_virtualmachine++;
 		}
 
 		if (res->num_vms == 0) {
 			res->state = RES_STATE_FINISHED;
-			datacenter_remove_reservation(dc, i);
-			continue; 
-			// Dont increase i
+			datacenter_remove_reservation(dc, n_reservation);
+			continue;   // Dont increase number of reservations
 		}
-		i++;
+		n_reservation++;
 	}
 }
 

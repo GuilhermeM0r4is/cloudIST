@@ -9,7 +9,7 @@
 #include "filesystem.h"
 
 typedef struct VMType{
-  char id[MAX_STRING_SIZE];        // Id of VM type. eg: "V1"
+  char id[MAX_STRING_SIZE];          // Id of VM type. eg: "V1"
   char input_folder[MAX_PATH_SIZE];  // Folder with input for executable
   char exec_path[MAX_PATH_SIZE];     // Path for executable
   Resources required;

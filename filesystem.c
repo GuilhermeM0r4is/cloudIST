@@ -54,8 +54,8 @@ int is_conf_file(const struct dirent *entry) {
     // searches for the size of the entry filename
 	size_t len = strlen(entry -> d_name);
 
-	// returns the logical response to when a filename
-	// ends with the .conf termination
+	/* returns the logical response to when a filename
+	   ends with the .conf termination */
 	return (len > 5 && strcmp(entry -> d_name + len - 5, ".conf") == 0);
 }
 
@@ -90,8 +90,8 @@ static int copy_file(const char *src, const char *dst) {
     if (src_fd == -1)
         return 1;
 
-    // opens dst as write only, creates if file doesn't exist
-    // and empties the file content if it exists already
+    /* opens dst as write only, creates if file doesn't exist
+       and empties the file content if it exists already */
     int dst_fd = open(dst, O_WRONLY | O_CREAT | O_TRUNC, PERMISSION_MODE);
 
     if (dst_fd == -1) {
@@ -122,14 +122,13 @@ static int copy_file(const char *src, const char *dst) {
 
 int copy_dir_recursive(const char *src, const char *dst) {
 
-    // makes an new directory with read, write and search permissions
-    // for owner and read and search permissions for others
+    /* makes an new directory with read, write and search permissions
+       for owner and read and search permissions for others */
     int new_dir = mkdir(dst, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
 
     // assures there will be an error
     if (new_dir == -1 && errno != EEXIST)
-        // not considered an error if the folder already exists
-        return 1;
+        return 1;   // not considered an error if the folder already exists
 
     errno = 0;
 
@@ -145,7 +144,7 @@ int copy_dir_recursive(const char *src, const char *dst) {
     // will open each entry and while still having entries
     while((dir_entry = readdir(dir)) != NULL) {
 
-        if (strcmp(dir_entry -> d_name, ".") == 0 || 
+        if (strcmp(dir_entry -> d_name, ".") == 0 ||
             strcmp(dir_entry -> d_name, "..") == 0)
             continue;   // skips any logic for other directories
 
