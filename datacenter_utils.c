@@ -313,8 +313,7 @@ int spawn_all_vms(DataCenter *dc, Reservation *res) {
 	return 0;
 }
 
-/* TODO: IMPLEMENT WAITING FOR VM
-   R: yes king */
+// Waiting function 
 void check_all_finished_vms(DataCenter *dc) {
 
     // variables to be incremented for each list respectivally
