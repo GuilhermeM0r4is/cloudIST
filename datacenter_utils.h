@@ -2,6 +2,7 @@
 #define DATACENTER_UTILS__H
 
 #include "datacenter.h"
+#include <stddef.h>
 
 /**
  * Checks if a VMType with the given id exists.
@@ -15,21 +16,33 @@
 VMType *VMType_exists(DataCenter *dc, const char* type_id);
 
 /**
+ * Validates simple conditions to assure the given server ids in the
+ * command line allow reservations to be made.
+ *
+ * @param dc Data Center where the reservation will be validated.
+ * @param reservation Reservation to validate.
+ *
+ * @return 0 if all server ids can be validated, 1 otherwise.
+ */
+int validate_server_ids(DataCenter *dc, Reservation *reservation);
+
+/**
  * Simulates the placement of every VM requested in the reservation using a
  * temporary copy of each server's available resources. The Data Center state
  * is left unchanged regardless of the outcome.
  *
  * Validation fails if any requested server does not have enough available
  * resources to host all the requested VMs assigned to it or if the request
- * does not have valid parameters (VM types that do not exist, invalid server ids).
+ * does not have valid parameters (VM types that do not exist).
  *
  * @param dc Data Center where the reservation will be validated.
  * @param reservation Reservation to validate.
+ * @param servers Pointer containing the unique ids list.
  *
  * @return 0 if the reservation can be fully allocated.
  * @return 1 otherwise.
  */
-int reservation_validate(DataCenter *dc, Reservation *reservation);
+int reservation_validate(DataCenter *dc, Reservation *reservation, ServerIdList *servers);
 
 /**
  * Creates all VMs requested by the reservation, assigns them to their
@@ -119,5 +132,57 @@ const char *vm_state_to_string(VMState state);
  * @return Static, human-readable string describing the state.
  */
 const char *res_state_to_string(ReservationState state);
+
+/**
+ * Gets the unique ids of all the different reservation servers
+ * and puts them into a list organized structure. Used by datacenter_reserve().
+ *
+ * @param res Pointer to the reservation we want to find the ids from.
+ *
+ * @return A structure containing the unique ids list and its counter.
+ */
+ServerIdList get_unique_idlist(Reservation *reservation);
+
+/**
+ * Locks each server mutex individually from the unique server id list.
+ *
+ * @param dc Pointer to the Datacenter with all the information.
+ * @param servers Pointer containing the unique ids list.
+ *
+ * @return 0 if everything went well, 1 otherwise.
+ */
+int lock_servers(DataCenter *dc, ServerIdList *servers);
+
+/**
+ * Locks the global mutex for the datacenter and each server
+ * mutex individually from the unique server id list.
+ *
+ * @param dc Pointer to the Datacenter with all the information.
+ * @param servers Pointer containing the unique ids list.
+ *
+ * @return 0 if everything went well, 1 otherwise.
+ */
+int lock_all(DataCenter *dc, ServerIdList *servers);
+
+/**
+ * Unlocks each server mutex individually from the unique server id list.
+ *
+ * @param dc Pointer to the Datacenter with all the information.
+ * @param servers Pointer containing the unique ids list.
+ *
+ * @return 0 if everything went well, 1 otherwise.
+ */
+int unlock_servers(DataCenter *dc, ServerIdList *servers);
+
+/**
+ * Unlocks the global mutex for the datacenter and each server
+ * mutex individually from the unique server id list.
+ *
+ * @param dc Pointer to the Datacenter with all the information.
+ * @param servers Pointer containing the unique ids list.
+ *
+ * @return 0 if everything went well, 1 otherwise.
+ */
+int unlock_all(DataCenter *dc, ServerIdList *servers);
 
 #endif // DATACENTER_UTILS__H

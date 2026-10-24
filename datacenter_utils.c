@@ -2,7 +2,7 @@
 #include "datacenter.h"
 #include "filesystem.h"
 
-#include <errno.h>   // para ECHILD
+#include <errno.h>   // for ECHILD
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
+#include <math.h>
 
 VMType *VMType_exists(DataCenter *dc, const char* type_id){
 	for(size_t i = 0; i < dc->num_vm_types; i++){
@@ -38,7 +39,19 @@ static int reservation_exists(DataCenter *dc, const char* reservation_id){
 	return 0;
 }
 
-int reservation_validate(DataCenter *dc, Reservation *reservation) {
+int validate_server_ids(DataCenter *dc, Reservation *reservation) {
+
+    for (size_t i = 0; i < reservation->items_count; i++) {
+
+		ReservationItem *item = &reservation->items[i];
+		if (item->server_id == 0 || item->server_id > dc->num_servers)
+			return 1;
+    }
+	return 0;
+}
+
+int reservation_validate(DataCenter *dc, Reservation *reservation, ServerIdList *servers) {
+
 	if(reservation_exists(dc, reservation->id)){
 		fprintf(stderr, "Reservation with id %s already exists.\n", reservation->id);
 		return 1;
@@ -48,10 +61,15 @@ int reservation_validate(DataCenter *dc, Reservation *reservation) {
 	size_t hosted_count[dc->num_servers];
 	size_t vms_count = 0;
 
-	/* Copy current server resources and hosted_vms so we can simulate the allocation. */
-	for (size_t i = 0; i < dc->num_servers; i++) {
-		available[i] = dc->servers[i].available;
-		hosted_count[i] = dc->servers[i].num_hosted_vms;
+	// Copy current server resources and hosted_vms so we can simulate the allocation.
+	for (size_t i = 0; i < servers->counter; i++) {
+
+	    /* gets the id from the unique ids instead so we don't
+		   have to search through all the other ids */
+	    size_t id = servers->ids[i] - 1;
+
+		available[id] = dc->servers[id].available;
+		hosted_count[id] = dc->servers[id].num_hosted_vms;
 	}
 
 	for (size_t i = 0; i < reservation->items_count; i++) {
@@ -69,11 +87,6 @@ int reservation_validate(DataCenter *dc, Reservation *reservation) {
 			return 1;
 		}
 
-		if (item->server_id == 0 || item->server_id > dc->num_servers) {
-			fprintf(stderr, "Invalid server in reservation.\n");
-			return 1;
-		}
-
 		for (size_t j = 0; j < item->amount; j++) {
 			if(vms_count >= MAX_RESERVATION_VMS){
 				fprintf(stderr, "Reached max of VMS for a reservation.\n");
@@ -81,11 +94,11 @@ int reservation_validate(DataCenter *dc, Reservation *reservation) {
 			}
 
 			if (hosted_count[item->server_id - 1] >= MAX_HOSTED_VMS) {
-        fprintf(stderr,
+                fprintf(stderr,
                 "Server \"%zu\" reached the maximum number of hosted VMs.\n",
                 item->server_id);
-        return 1;
-    	}
+                return 1;
+    	    }
 
 			if (!resources_can_fit(available[item->server_id-1], vm_type->required)) {
 				fprintf(stderr, "Server \"%zu\" does not have enough resources.\n", item->server_id);
@@ -259,12 +272,12 @@ void spawn_vm_child(DataCenter *dc, VM *vm) {
 	setrlimit(RLIMIT_FSIZE, &disk_lim);    // maximum size in bytes any process can create
 
 
-	int percent = vm->type->required.cpu / vm->server->total.cpu *
-	                 dc->num_servers * 100;
+	double percent = vm->type->required.cpu / vm->server->total.cpu *
+	                 (double)dc->num_servers * 100;
 
 	// transforms the percent int into a string
 	char str_percent[MAX_STRING_SIZE];
-	sprintf(str_percent, "%d", percent);
+	sprintf(str_percent, "%d", (int)lround(percent));
 
 	/* execlp will search for the $PATH first and execute the command,
 	   it also restrains the usage of NULL in the end */
@@ -293,6 +306,7 @@ int spawn_all_vms(DataCenter *dc, Reservation *res) {
 		/* having a switch for the fork, so the parent can create
 		   multiple VMs that will run as childs in background of the project */
 		pid_t pid = fork();
+
 		switch (pid) {
 
             case -1:    // error
@@ -313,28 +327,40 @@ int spawn_all_vms(DataCenter *dc, Reservation *res) {
 	return 0;
 }
 
-/* TODO: IMPLEMENT WAITING FOR VM
-   R: yes king */
+// waiting function
 void check_all_finished_vms(DataCenter *dc) {
 
     // variables to be incremented for each list respectivally
 	size_t n_reservation = 0;
-	size_t n_virtualmachine = 0;
+
+	// locking global mutex
+	if (pthread_mutex_lock(&dc->metadata_mutex) != 0)
+	    return;
 
 	while (n_reservation < dc->num_reservations) {
+
 	    // gets each reservation per cycle
 		Reservation *res = &dc->reservations[n_reservation];
+		size_t n_virtualmachine = 0;
 
 		if (res->state != RES_STATE_RUNNING) {
 			n_reservation++;
 			continue;
 		}
 
+		// locks the mutexes of the unique servers
+        ServerIdList servers = get_unique_idlist(res);
+        if (lock_servers(dc, &servers) != 0) {
+            pthread_mutex_unlock(&dc->metadata_mutex);
+            return;
+        }
+
 		while (n_virtualmachine < res->num_vms) {
 			VM *vm = res->vms[n_virtualmachine];
 
 			if (vm->state == VM_STATE_RUNNING) {
-				int status;
+
+			    int status;
 				pid_t r = waitpid(vm->pid, &status, WNOHANG);
 
 				// r == pid: ended r == -1/ECHILD: has already been recieved
@@ -351,10 +377,15 @@ void check_all_finished_vms(DataCenter *dc) {
 		if (res->num_vms == 0) {
 			res->state = RES_STATE_FINISHED;
 			datacenter_remove_reservation(dc, n_reservation);
+
+			unlock_servers(dc, &servers);
 			continue;   // Dont increase number of reservations
 		}
 		n_reservation++;
+
+		unlock_servers(dc, &servers);
 	}
+	pthread_mutex_unlock(&dc->metadata_mutex);
 }
 
 const char *vm_state_to_string(VMState state) {
@@ -368,9 +399,117 @@ const char *vm_state_to_string(VMState state) {
 
 const char *res_state_to_string(ReservationState state) {
     switch (state) {
-			case RES_STATE_PENDING:  return "PENDING";
-			case RES_STATE_RUNNING:  return "RUNNING";
-			case RES_STATE_FINISHED: return "FINISHED";
-			default:                 return "UNKNOWN";
+			case RES_STATE_PENDING:     return "PENDING";
+			case RES_STATE_INITIALIZED: return "INITIALIZED";
+			case RES_STATE_RUNNING:     return "RUNNING";
+			case RES_STATE_FINISHED:    return "FINISHED";
+			default:                    return "UNKNOWN";
     }
+}
+
+/**
+ * Compares both size_t parameters and return the respective
+ * comparison value so qsort can work.
+ *
+ * @param a size_t value to compare.
+ * @param b size_t value to compare.
+ *
+ * @return 1 right comes before left.
+ * @return 0 both are equal.
+ * @return -1 right comes after left.
+ */
+static int compare_size_t(const void *a, const void *b) {
+
+    const size_t left = *(const size_t *)a;
+    const size_t right = *(const size_t *)b;
+
+    return (left > right) - (left < right);
+}
+
+ServerIdList get_unique_idlist(Reservation *reservation) {
+    ServerIdList servers = {0};
+
+    /* goes through reservations->items to check each server_id
+       we'll use two loops inside of each other, to check for the
+       item first and its id, and then check if it is inside the list */
+    for(size_t i = 0; i < reservation->items_count; i++) {
+
+        size_t id = reservation->items[i].server_id;
+        size_t already_in_list = 0;
+
+        for(size_t j = 0; j < servers.counter; j++) {
+
+            // if we already have the server_id inside the list
+            if (servers.ids[j] == id) {
+                already_in_list = 1;
+                break;
+            }
+        }
+
+        if (!already_in_list) {
+            // if it's not in list, we shall copy id into list
+            servers.ids[servers.counter] = id;
+            servers.counter++;
+        }
+    }
+    qsort(servers.ids, servers.counter, sizeof(servers.ids[0]), compare_size_t);
+
+    return servers;
+}
+
+int lock_servers(DataCenter *dc, ServerIdList *servers) {
+
+    // logic for locking each mutex individually
+    for(size_t i = 0; i < servers->counter; i++) {
+
+        size_t id_to_search = servers->ids[i] - 1;
+
+        /* tries to lock each server, if something fails in the meanwhile
+           unlocks all the servers already locked and fails */
+        if (pthread_mutex_lock(&dc->servers[id_to_search].server_mutex) != 0) {
+
+            for (size_t j = i; j > 0; j--) {
+                size_t id_search = servers->ids[j - 1] - 1;
+                pthread_mutex_unlock(&dc->servers[id_search].server_mutex);
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int lock_all(DataCenter *dc, ServerIdList *servers) {
+
+    if (pthread_mutex_lock(&dc->metadata_mutex) != 0)
+        return 1;
+
+    if (lock_servers(dc, servers) != 0) {
+        pthread_mutex_unlock(&dc->metadata_mutex);
+        return 1;
+    }
+
+    return 0;
+}
+
+int unlock_servers(DataCenter *dc, ServerIdList *servers) {
+
+    // logic for locking each mutex individually
+    for(size_t i = servers->counter; i > 0; i--) {
+
+        size_t id_to_search = servers->ids[i - 1] - 1;
+        if (pthread_mutex_unlock(&dc->servers[id_to_search].server_mutex) != 0)
+            return 1;
+    }
+    return 0;
+}
+
+int unlock_all(DataCenter *dc, ServerIdList *servers) {
+
+    if (unlock_servers(dc, servers) != 0)
+        return 1;
+
+    if (pthread_mutex_unlock(&dc->metadata_mutex) != 0)
+        return 1;
+
+    return 0;
 }

@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <sys/types.h>
+#include <pthread.h>                // C library for the mutex
 
 #include "resources.h"
 #include "constants.h"
@@ -38,16 +39,19 @@ typedef struct Server {
 
 	VM *hosted_vms[MAX_HOSTED_VMS];
     size_t num_hosted_vms;
+
+    pthread_mutex_t server_mutex;    // Protects the server metadata
 } Server;
 
 typedef enum {
-    RES_STATE_PENDING,   // Reserved via 'R', waiting for 'A'
-    RES_STATE_RUNNING,   // 'A' was called
-    RES_STATE_FINISHED   // All VMs in this reservation have terminated
+    RES_STATE_PENDING,     // Reserved via 'R', waiting for 'A'
+    RES_STATE_INITIALIZED, // Waiting for mutex to start 'A'
+    RES_STATE_RUNNING,     // 'A' was called
+    RES_STATE_FINISHED     // All VMs in this reservation have terminated
 } ReservationState;
 
 typedef struct ReservationPair {
-    char vm_type_id[MAX_STRING_SIZE]; // VM type. e.g: "V1"       
+    char vm_type_id[MAX_STRING_SIZE]; // VM type. e.g: "V1"
     size_t amount;                    // Amount of VMs with the given type being reserved.
     size_t server_id;                 // Server where each VM will be running on.
 
@@ -57,7 +61,7 @@ typedef struct ReservationPair {
 typedef struct Reservation {
 	char id[MAX_STRING_SIZE];                       // id of reservation.
 
-	ReservationItem items[MAX_RESERVATIONS_ITEMS];  // List of reservations items 
+	ReservationItem items[MAX_RESERVATIONS_ITEMS];  // List of reservations items
     size_t items_count;
 
 	VM *vms[MAX_RESERVATION_VMS];                   // List of VMs in this reservation.
@@ -75,8 +79,14 @@ typedef struct DataCenter {
 	Reservation reservations[MAX_RESERVATIONS];
     size_t num_reservations;
 
-	int configured;		      // Wheter the datacenter is configured or not.
+    pthread_mutex_t metadata_mutex;    // Global Mutex to protect global metadata
+	int configured;		               // Wheter the datacenter is configured or not.
 } DataCenter;
+
+typedef struct ServerIdList {
+    size_t ids[MAX_RESERVATIONS_ITEMS]; // contains all the unique ids
+    size_t counter;                     // its respective counter
+} ServerIdList;
 
 /**
  * Initializes a Data Center.
@@ -108,7 +118,7 @@ int datacenter_configure(DataCenter *dc, size_t num_pcs, Resources *resources);
  *
  * @param dc Pointer to a Data Center.
  * @param type Pointer to VM type.
- * 
+ *
  * @return 0 on success.
  * @return 1 on error.
  */
@@ -119,7 +129,7 @@ int datacenter_define_VM(DataCenter *dc, struct VMType *type);
  *
  * @param dc Pointer to a Data Center.
  * @param reservation Pointer to a Reservation.
- * 
+ *
  * @return 0 on success.
  * @return 1 on error.
  */
@@ -129,7 +139,7 @@ int datacenter_reserve(DataCenter *dc, Reservation *reservation);
  * Lists the current state of the Data Center.
  *
  * @param dc Pointer to a Data Center.
- * 
+ *
  * @return 0 on success.
  * @return 1 on error.
  */
@@ -140,7 +150,7 @@ int datacenter_list(DataCenter *dc);
  *
  * @param dc Pointer to a Data Center.
  * @param reservation_id ID of the reservation to execute.
- * 
+ *
  * @return 0 on success.
  * @return 1 on error.
  */
@@ -148,7 +158,7 @@ int datacenter_execute(DataCenter *dc, const char *reservation_id);
 
 /**
  * Executes a delay command.
- * 
+ *
  * @param delay_ms Delay in ms.
  */
 void datacenter_wait(unsigned int delay_ms);

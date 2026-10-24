@@ -103,7 +103,7 @@ static int copy_file(const char *src, const char *dst) {
 
     while(1) {
         // reads up the file content until the bytes given
-        int bytes = read(src_fd, buffer, sizeof(buffer));
+        ssize_t bytes = read(src_fd, buffer, sizeof(buffer));
 
         if (bytes == 0) // there's nothing else to read
             break;
@@ -112,7 +112,7 @@ static int copy_file(const char *src, const char *dst) {
             return fail_copy(src_fd, dst_fd);
 
         // if we have read bytes up until here
-        if (write(dst_fd, buffer, bytes) == -1)
+        if (write(dst_fd, buffer, (size_t)bytes) == -1)
             return fail_copy(src_fd, dst_fd);
     }
     close(src_fd);
@@ -150,10 +150,10 @@ int copy_dir_recursive(const char *src, const char *dst) {
 
         // stores both paths into the buffers
         char src_buffer[MAX_PATH_SIZE];
-        snprintf(src_buffer, sizeof(src_buffer), "%s/%s", src, dir_entry -> d_name);
+        snprintf(src_buffer, sizeof(src_buffer), "%s/%s", src, dir_entry->d_name);
 
         char dst_buffer[MAX_PATH_SIZE];
-        snprintf(dst_buffer, sizeof(dst_buffer), "%s/%s", dst, dir_entry -> d_name);
+        snprintf(dst_buffer, sizeof(dst_buffer), "%s/%s", dst, dir_entry->d_name);
 
         struct stat st;
         // assures that if -1, then stat failed
