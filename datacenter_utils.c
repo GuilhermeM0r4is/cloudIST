@@ -2,6 +2,7 @@
 #include "datacenter.h"
 #include "filesystem.h"
 
+#include <signal.h>  // to rollback and kill the child process
 #include <errno.h>   // for ECHILD
 #include <stddef.h>
 #include <stdio.h>
@@ -118,12 +119,54 @@ int reservation_validate(DataCenter *dc, Reservation *reservation, ServerIdList 
 }
 
 /**
+ * Rolls back the changes made by a reservation operation, not
+ * returning all the information, but instead returning all the
+ * set values into default and returning state into RESERVED.
+ *
+ * @param reservation Pointer to the reservation being rolled back.
+ */
+static int rollback_spawned_vms(Reservation *reservation) {
+
+    int success = 1;
+
+    for (size_t i = 0; reservation->num_vms > i; i++) {
+		VM *vm = reservation->vms[i];
+
+		// if any of the VMS are still running we have to rollback it
+		if (vm->state != VM_STATE_RUNNING || vm->pid <= 0)
+            continue;
+
+		pid_t pid = vm->pid;
+
+		// sigkill returns -1 if there are any kind of errors
+		if (kill(pid, SIGKILL) == -1 && errno != ESRCH) {
+            success = 0;
+            continue;
+		}
+
+        pid_t result;
+        do {    // checks any possible problem with the waitpid
+            result = waitpid(pid, NULL, 0);
+        } while (result == -1 && errno == EINTR);
+
+        if (result == pid || (result == -1 && errno == ECHILD)) {
+            vm->pid = 0;
+            vm->state = VM_STATE_RESERVED;
+
+        } else {
+            success = 0;
+        }
+	}
+    return success ? 0 : 1;
+}
+
+/**
  * Rolls back the changes made by a reservation operation.
  *
  * @param reservation Pointer to the reservation being rolled back.
  * @param initial_vms Number of VMs that existed before the operation.
  */
-static void reservation_rollback(Reservation *reservation, size_t initial_vms){
+static void reservation_rollback(Reservation *reservation, size_t initial_vms) {
 	while (reservation->num_vms > initial_vms) {
 		VM *vm = reservation->vms[reservation->num_vms - 1];
 
@@ -204,6 +247,9 @@ Reservation *find_pending_reservation(DataCenter *dc, const char *reservation_id
 		fprintf(stderr, "Reservation ID %s is not in a pending state.\n", reservation_id);
 		return NULL;
 	}
+
+	res->state = RES_STATE_INITIALIZED;
+	dc->active_executions++;    // increments the active executions
 
 	return res;
 }
@@ -300,6 +346,7 @@ int spawn_all_vms(DataCenter *dc, Reservation *res) {
 
 		    fprintf(stderr, "%s went wrong while copying the input folder: %s\n",
 					vm->id, vm->type->input_folder);
+			rollback_spawned_vms(res);
 			return 1;
 		}
 
@@ -310,6 +357,7 @@ int spawn_all_vms(DataCenter *dc, Reservation *res) {
 		switch (pid) {
 
             case -1:    // error
+                rollback_spawned_vms(res);
                 perror("fork");
                 return 1;
 
@@ -374,7 +422,7 @@ void check_all_finished_vms(DataCenter *dc) {
 			n_virtualmachine++;
 		}
 
-		if (res->num_vms == 0) {
+		if (res->num_vms == 0 && dc->active_executions == 0) {
 			res->state = RES_STATE_FINISHED;
 			datacenter_remove_reservation(dc, n_reservation);
 

@@ -75,6 +75,7 @@ typedef struct DataCenter {
 
 	VMType vm_types[MAX_VM_TYPES];
     size_t num_vm_types;
+    size_t active_executions;        // assures a later error with paralelism in threads
 
 	Reservation reservations[MAX_RESERVATIONS];
     size_t num_reservations;

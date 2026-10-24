@@ -13,3 +13,5 @@
 #define PERMISSION_MODE        0644   /* permission mode that allows owner to
                                          write/read, the rest only to read file */
 #define EXEC_FAILURE           127
+
+#define CLOUDIST_ROOT_DIR      "/tmp/CloudIST"

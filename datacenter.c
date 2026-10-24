@@ -1,6 +1,7 @@
 #include "datacenter.h"
 #include "datacenter_utils.h"
 
+#include <pthread.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <time.h>
@@ -80,34 +81,46 @@ int datacenter_configure(DataCenter *dc, size_t num_servers, Resources *resource
 }
 
 int datacenter_define_VM(DataCenter *dc, VMType *type){
-  if (!dc->configured) {
-    fprintf(stderr, "Data Center needs to be configured!\n");
-    return 1;
-  }
 
-  if(VMType_exists(dc, type->id) != NULL){
-    fprintf(stderr, "VM type with id %s already exists.\n", type->id);
-    return 1;
-  }
+    if (pthread_mutex_lock(&dc->metadata_mutex) != 0) {
+        fprintf(stderr, "Global mutex failed to lock!\n");
+        return 1;
+    }
 
-  if (!file_exists(type->exec_path)) {
-    fprintf(stderr, "Invalid executable path.\n");
-    return 1;
-  }
+    if (!dc->configured) {
+        pthread_mutex_unlock(&dc->metadata_mutex);
+        fprintf(stderr, "Data Center needs to be configured!\n");
+        return 1;
+    }
 
-  if (!path_exists(type->input_folder)) {
-    fprintf(stderr, "Invalid input folder.\n");
-    return 1;
-  }
+    if(VMType_exists(dc, type->id) != NULL){
+        pthread_mutex_unlock(&dc->metadata_mutex);
+        fprintf(stderr, "VM type with id %s already exists.\n", type->id);
+        return 1;
+    }
 
-  if(dc->num_vm_types >= MAX_VM_TYPES){
-    fprintf(stderr, "Maximum of VM types reached.\n");
-    return 1;
-  }
+    if (!file_exists(type->exec_path)) {
+        pthread_mutex_unlock(&dc->metadata_mutex);
+        fprintf(stderr, "Invalid executable path.\n");
+        return 1;
+    }
 
-  dc->vm_types[dc->num_vm_types++] = *type;
+    if (!path_exists(type->input_folder)) {
+        pthread_mutex_unlock(&dc->metadata_mutex);
+        fprintf(stderr, "Invalid input folder.\n");
+        return 1;
+    }
 
-  return 0;
+    if(dc->num_vm_types >= MAX_VM_TYPES) {
+        pthread_mutex_unlock(&dc->metadata_mutex);
+        fprintf(stderr, "Maximum of VM types reached.\n");
+        return 1;
+    }
+
+    dc->vm_types[dc->num_vm_types++] = *type;
+
+    pthread_mutex_unlock(&dc->metadata_mutex);
+    return 0;
 }
 
 int datacenter_reserve(DataCenter *dc, Reservation *reservation) {
@@ -154,6 +167,7 @@ int datacenter_reserve(DataCenter *dc, Reservation *reservation) {
 
 // Removed parts of the code that blocked main.c until the VMs ended
 int datacenter_execute(DataCenter *dc, const char *reservation_id) {
+
     if(!dc->configured){
         fprintf(stderr, "Data Center needs to be configured!\n");
         return 1;
@@ -167,24 +181,53 @@ int datacenter_execute(DataCenter *dc, const char *reservation_id) {
         return 1;
     }
 
-    // need in between state we created
-    res->state = RES_STATE_INITIALIZED;
+    // gets all unique server lists and ids, unlocks the global mutex
+    ServerIdList servers = get_unique_idlist(res);
+    pthread_mutex_unlock(&dc->metadata_mutex);
 
-    if (spawn_all_vms(dc, res) != 0) {
-        // in case of any type of error, we have to unlock global mutex
-        res->state = RES_STATE_FINISHED;
+    // need in between state we created
+    if (lock_servers(dc, &servers) != 0) {
+        if (pthread_mutex_lock(&dc->metadata_mutex) != 0) return 1;
+
+        res->state = RES_STATE_PENDING;
+        dc->active_executions--;
+
         pthread_mutex_unlock(&dc->metadata_mutex);
         return 1;
     }
 
-    res->state = RES_STATE_RUNNING;
-    pthread_mutex_unlock(&dc->metadata_mutex);
+    if (spawn_all_vms(dc, res) != 0) {
 
+        /* in case of any type of error, we have to unlock server mutexes
+           but start the global to change different infos on dc */
+        unlock_servers(dc, &servers);
+        if (pthread_mutex_lock(&dc->metadata_mutex) != 0) return 1;
+
+        res->state = RES_STATE_PENDING;
+        dc->active_executions--;
+
+        pthread_mutex_unlock(&dc->metadata_mutex);
+        return 1;
+    }
+
+    // unlocks servers mutexes but locks global once again
+    unlock_servers(dc, &servers);
+    if (pthread_mutex_lock(&dc->metadata_mutex) != 0) return 1;
+
+    res->state = RES_STATE_RUNNING;
+    dc->active_executions--;
+
+    pthread_mutex_unlock(&dc->metadata_mutex);
     return 0;
 }
 
 int datacenter_list(DataCenter *dc) {
+
+    if (pthread_mutex_lock(&dc->metadata_mutex) != 0)
+        return 1;
+
     if (!dc->configured) {
+        pthread_mutex_unlock(&dc->metadata_mutex);
         fprintf(stderr, "Data Center needs to be configured!\n");
         return 1;
     }
@@ -286,6 +329,8 @@ int datacenter_list(DataCenter *dc) {
 }
 
     printf("================================================================--------------------------\n\n");
+
+    pthread_mutex_unlock(&dc->metadata_mutex);
     return 0;
 }
 
