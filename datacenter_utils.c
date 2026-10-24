@@ -1,3 +1,5 @@
+#define _XOPEN_SOURCE 700
+
 #include "datacenter_utils.h"
 #include "datacenter.h"
 #include "filesystem.h"
@@ -10,6 +12,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <sys/resource.h>
 #include <math.h>
 
@@ -299,7 +302,13 @@ static void datacenter_remove_reservation(DataCenter *dc, size_t idx) {
 	dc->num_reservations--;
 }
 
-void spawn_vm_child(DataCenter *dc, VM *vm) {
+void spawn_vm_child(DataCenter *dc, VM *vm,
+    const char *working_dir, const char *exec_path) {
+
+    if (chdir(working_dir) == -1) {
+        perror("chdir failed");
+        _exit(EXEC_FAILURE);
+    }
 
     /* uses the rlimit structure to define both limits for ram
        and disk, defining later on the current and max as the same limit
@@ -318,8 +327,8 @@ void spawn_vm_child(DataCenter *dc, VM *vm) {
 	setrlimit(RLIMIT_FSIZE, &disk_lim);    // maximum size in bytes any process can create
 
 
-	double percent = vm->type->required.cpu / vm->server->total.cpu *
-	                 (double)dc->num_servers * 100;
+	double percent = 100.0 * vm->type->required.cpu * (double)dc->core_count /
+                     (vm->server->total.cpu * (double)dc->num_servers);
 
 	// transforms the percent int into a string
 	char str_percent[MAX_STRING_SIZE];
@@ -328,18 +337,49 @@ void spawn_vm_child(DataCenter *dc, VM *vm) {
 	/* execlp will search for the $PATH first and execute the command,
 	   it also restrains the usage of NULL in the end */
 	if (execlp("cpulimit", "cpulimit", "-q", "-f", "-l", str_percent, "--",
-	            vm->type->exec_path, NULL) == -1)
-	    exit(1);
+	            exec_path, NULL) == -1) {
+
+	    perror("cpulimit/worker exec failed");
+	    _exit(EXEC_FAILURE);
+	}
+}
+
+/**
+ * Auxiliar function made only to assure the dst folder
+ * is created to store all files into it.
+ *
+ * @param res Pointer to the Reservations to gather its directory.
+ *
+ * @return 0 if everything goes well, 1 otherwise.
+ */
+int assure_dst_folder_exists(Reservation *res) {
+
+    char reservation_dir[MAX_PATH_SIZE];    // buffer
+
+    // puts the path to be created inside the buffer
+    snprintf(reservation_dir, sizeof(reservation_dir),
+             CLOUDIST_ROOT_DIR "/%s", res->id);
+
+    // creates the folder as full op permissions
+    if (mkdir(reservation_dir, DIRECTORY_PERMISSION_MODE) == -1 && errno != EEXIST) {
+        perror("Failed to create reservation directory");
+        return 1;
+    }
+    return 0;
 }
 
 int spawn_all_vms(DataCenter *dc, Reservation *res) {
-	for (size_t i = 0; i < res->num_vms; i++) {
+
+    if (assure_dst_folder_exists(res) != 0)
+		return 1;
+
+    for (size_t i = 0; i < res->num_vms; i++) {
 
 		VM *vm = res->vms[i];
 		char dst_buffer[MAX_PATH_SIZE];
 
 		// creates the path to be copied to as /tmp/CloudIST/<res id>/<vm id>
-		snprintf(dst_buffer, sizeof(dst_buffer), "/tmp/CloudIST/%s/%s", res->id, vm->id);
+		snprintf(dst_buffer, sizeof(dst_buffer), CLOUDIST_ROOT_DIR"/%s/%s", res->id, vm->id);
 
 		// calls our function to copy all the directories from the input_folder
 		if (copy_dir_recursive(vm->type->input_folder, dst_buffer) == 1) {
@@ -348,6 +388,16 @@ int spawn_all_vms(DataCenter *dc, Reservation *res) {
 					vm->id, vm->type->input_folder);
 			rollback_spawned_vms(res);
 			return 1;
+		}
+
+		/* creates the realpath that we can check to go over the
+		   problem in exercise 2, the real executable path */
+		char executable_path[MAX_PATH_SIZE];
+
+		if (realpath(vm->type->exec_path, executable_path) == NULL) {
+            perror("Failed to resolve executable path");
+            rollback_spawned_vms(res);
+            return 1;
 		}
 
 		/* having a switch for the fork, so the parent can create
@@ -362,7 +412,7 @@ int spawn_all_vms(DataCenter *dc, Reservation *res) {
                 return 1;
 
             case 0:     // child
-                spawn_vm_child(dc, vm);
+                spawn_vm_child(dc, vm, dst_buffer, executable_path);
                 break;
 
             default:    //parent

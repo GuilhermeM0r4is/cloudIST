@@ -12,6 +12,8 @@ void datacenter_init(DataCenter *dc) {
   dc->servers = NULL;
   dc->num_servers = 0;
 
+  dc->core_count = 0;
+
   dc->num_vm_types = 0;
 
   dc->num_reservations = 0;
@@ -35,20 +37,23 @@ void datacenter_destroy(DataCenter *dc) {
     pthread_mutex_destroy(&dc->metadata_mutex);
 }
 
-int datacenter_configure(DataCenter *dc, size_t num_servers, Resources *resources){
-    if(dc->configured){
+int datacenter_configure(DataCenter *dc, size_t num_servers,
+                        Resources *resources, size_t core_count) {
+
+    if (dc->configured) {
         fprintf(stderr, "Data Center is already configured!\n");
         return 1;
     }
 
-    if (num_servers == 0 || resources->ram == 0 || resources->disk == 0 || resources->cpu <= 0.0) {
+    if (num_servers == 0 || resources->ram == 0 || resources->disk == 0 ||
+        resources->cpu <= 0.0 || core_count == 0) {
         fprintf(stderr, "Invalid configuration values.\n");
         return 1;
     }
 
     dc->servers = (Server*)malloc(num_servers*sizeof(Server));
 
-    if(dc->servers == NULL){
+    if(dc->servers == NULL) {
         fprintf(stderr, "Failed to allocate memory for servers.\n");
         return 1;
     }
@@ -75,6 +80,7 @@ int datacenter_configure(DataCenter *dc, size_t num_servers, Resources *resource
     }
 
     dc->num_servers = num_servers;
+    dc->core_count = core_count;
     dc->configured = 1;
 
     return 0;

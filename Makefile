@@ -12,8 +12,8 @@ endif
 
 all: cloudIST
 
-cloudIST: main.c constants.h parser.o datacenter.o datacenter_utils.o resources.o filesystem.o
-	$(CC) $(CFLAGS) $(SLEEP) -o cloudIST main.c parser.o datacenter.o datacenter_utils.o resources.o filesystem.o -lm
+cloudIST: main.c main_auxiliar.o constants.h parser.o datacenter.o datacenter_utils.o resources.o filesystem.o
+	$(CC) $(CFLAGS) -o cloudIST main.c main_auxiliar.o parser.o datacenter.o datacenter_utils.o resources.o filesystem.o -lm
 
 %.o: %.c %.h
 	$(CC) $(CFLAGS) -c ${@:.o=.c}

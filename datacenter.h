@@ -1,6 +1,7 @@
 #ifndef DATACENTER__H
 #define DATACENTER__H
 
+#include <stddef.h>
 #include <stdio.h>
 #include <sys/types.h>
 #include <pthread.h>                // C library for the mutex
@@ -72,6 +73,7 @@ typedef struct Reservation {
 typedef struct DataCenter {
 	Server *servers;			     // List of Servers.
 	size_t num_servers;              // Number of Servers.
+	size_t core_count;               // Handles the last step logic.
 
 	VMType vm_types[MAX_VM_TYPES];
     size_t num_vm_types;
@@ -112,7 +114,8 @@ void datacenter_destroy(DataCenter *dc);
  * @return 0 on success.
  * @return 1 on error.
  */
-int datacenter_configure(DataCenter *dc, size_t num_pcs, Resources *resources);
+int datacenter_configure(DataCenter *dc, size_t num_pcs,
+                        Resources *resources, size_t core_counter);
 
 /**
  * Defines a VM for the Data Center
